@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Billboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{ --interval: 5000; } /* ms between photos, overridden by manifest.json "interval" if present */
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; background:#000; overflow:hidden; }
+  #stage{ position:fixed; inset:0; background:#000; }
+  #stage .frame{
+    position:absolute; inset:0;
+    background-size:contain;
+    background-position:center;
+    background-repeat:no-repeat;
+    opacity:0;
+    transform:scale(1.06);
+    transition:opacity 1.2s ease, transform 8s linear;
+    will-change:opacity, transform;
+  }
+  #stage .frame.show{ opacity:1; transform:scale(1); }
+  #msg{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#555; font-family:-apple-system,sans-serif; font-size:14px; text-align:center;
+    padding:20px;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="msg">Loading photos&hellip;</div>
+</div>
+
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const msg = document.getElementById('msg');
+  let frames = [];
+  for(let i=0;i<2;i++){
+    const f = document.createElement('div');
+    f.className = 'frame';
+    stage.appendChild(f);
+    frames.push(f);
+  }
+
+  let images = [];
+  let intervalMs = 5000;
+  let current = 0;
+  let cycleTimer = null;
+
+  function show(index){
+    const active = frames.find(f => f.classList.contains('show')) || frames[1];
+    const nextLayer = frames.find(f => f !== active) || frames[0];
+    nextLayer.style.backgroundImage = `url(images/${images[index]})`;
+    void nextLayer.offsetWidth;
+    nextLayer.classList.add('show');
+    active.classList.remove('show');
+  }
+
+  function next(){
+    if(!images.length) return;
+    current = (current + 1) % images.length;
+    show(current);
+  }
+
+  function startCycle(){
+    if(cycleTimer) clearInterval(cycleTimer);
+    if(images.length > 1) cycleTimer = setInterval(next, intervalMs);
+  }
+
+  async function loadManifest(){
+    try{
+      const res = await fetch('manifest.json?t=' + Date.now());
+      const data = await res.json();
+      const newImages = Array.isArray(data) ? data : (data.images || []);
+      if(!Array.isArray(data) && data.interval) intervalMs = data.interval * 1000;
+
+      if(!newImages.length){
+        msg.textContent = 'No photos yet — add files to /images and update manifest.json';
+        msg.style.display = 'flex';
+        return;
+      }
+      msg.style.display = 'none';
+
+      const changed = JSON.stringify(newImages) !== JSON.stringify(images);
+      images = newImages;
+      if(current === 0 && !frames[0].classList.contains('show') && !frames[1].classList.contains('show')){
+        show(0);
+      }
+      if(changed) startCycle();
+    }catch(e){
+      msg.textContent = 'Could not load manifest.json';
+      msg.style.display = 'flex';
+    }
+  }
+
+  loadManifest();
+  startCycle();
+  // re-check manifest every 2 minutes so newly pushed photos appear without reopening the page
+  setInterval(loadManifest, 120000);
+})();
+</script>
+</body>
+</html>
